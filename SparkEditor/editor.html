@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
+<script>if (location.search.indexOf("embed") >= 0) document.documentElement.classList.add("embed");</script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Spark</title>
@@ -137,6 +138,7 @@
   .ln.dim .ms { color: var(--dim); }
   #outbody::-webkit-scrollbar, .ln::-webkit-scrollbar { width: 9px; height: 9px; }
   #outbody::-webkit-scrollbar-thumb { background: #26313f; border-radius: 5px; }
+.embed #bar, .embed #status, .embed #out, .embed #grip { display: none !important; }
 </style>
 </head>
 <body>
@@ -979,6 +981,7 @@ window.MonacoEnvironment = { getWorkerUrl: () => URL.createObjectURL(new Blob(["
     activity("monaco booted");
     writeLine("editor ready", "ok");
     post({ spark: "ready" });
+    hostLog("embed=" + document.documentElement.classList.contains("embed") + " bar=" + getComputedStyle(document.getElementById("bar")).display + " out=" + getComputedStyle(document.getElementById("out")).display + " editorH=" + document.getElementById("editor").clientHeight + " editorW=" + document.getElementById("editor").clientWidth);
 
     if (helloBeforeBoot) {
       const o = helloBeforeBoot;
