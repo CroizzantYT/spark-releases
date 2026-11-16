@@ -1,0 +1,1033 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spark</title>
+<link rel="stylesheet" href="vs/editor/editor.main.css">
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #1a2230;
+    --panel-2: #151c27;
+    --line: #26313f;
+    --fg: #cfd8e3;
+    --dim: #74839a;
+    --accent: #7fd1b0;
+    --err: #ef6a6a;
+    --warn: #e5b567;
+    --mono: "Cascadia Mono", "JetBrains Mono", "Consolas", "SF Mono", "Courier New", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font: 12px/1.45 var(--mono);
+    display: flex;
+    flex-direction: column;
+    -webkit-font-smoothing: antialiased;
+  }
+  body.resizing { user-select: none; cursor: row-resize; }
+
+  #bar {
+    height: 26px;
+    min-height: 26px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 8px;
+    background: linear-gradient(180deg, #1c2533 0%, #161d28 100%);
+    border-bottom: 1px solid var(--line);
+  }
+  #bar .mark {
+    width: 8px; height: 8px; border-radius: 2px;
+    background: var(--accent);
+    box-shadow: 0 0 8px #7fd1b066;
+    flex: none;
+  }
+  #bar .brand { color: var(--accent); font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
+  #bar .doc { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 34vw; }
+  #bar .grow { flex: 1 1 auto; min-width: 8px; }
+  #bar .hint { color: #4e5c70; font-size: 11px; white-space: nowrap; }
+  button {
+    font: 11px var(--mono);
+    color: var(--fg);
+    background: #202a39;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 3px 9px;
+    cursor: pointer;
+    letter-spacing: .04em;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button:active { transform: translateY(1px); }
+  button.primary { background: #21382f; border-color: #33574a; color: var(--accent); }
+  button.danger:hover { border-color: var(--err); color: var(--err); }
+
+  #status {
+    height: 22px;
+    min-height: 22px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 0 8px;
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--line);
+    color: var(--dim);
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  #status .cell { display: flex; align-items: center; gap: 5px; }
+  #status .k { color: #46536a; text-transform: uppercase; letter-spacing: .1em; }
+  #status .v { color: var(--fg); }
+  #status .v.ok { color: var(--accent); }
+  #status .v.bad { color: var(--err); }
+  #status .v.warn { color: var(--warn); }
+  #status .grow { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #46536a; flex: none; }
+  .dot.wait { background: var(--warn); }
+  .dot.mid { background: #58a6ff; }
+  .dot.ok { background: var(--accent); box-shadow: 0 0 7px #7fd1b0aa; }
+
+  #wrap { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+  #editor { flex: 1 1 auto; min-height: 0; }
+
+  #grip {
+    height: 5px;
+    min-height: 5px;
+    background: var(--panel-2);
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    cursor: row-resize;
+    position: relative;
+  }
+  #grip::after {
+    content: "";
+    position: absolute;
+    left: 50%; top: 1px;
+    width: 44px; height: 2px; margin-left: -22px;
+    background: #33415a;
+    border-radius: 2px;
+  }
+  #grip:hover::after { background: var(--accent); }
+
+  #out { height: 130px; min-height: 60px; display: flex; flex-direction: column; background: var(--panel); }
+  #outhead {
+    height: 20px; min-height: 20px;
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 8px;
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--line);
+    color: #46536a;
+    font-size: 10px; letter-spacing: .16em; text-transform: uppercase;
+  }
+  #outhead .grow { flex: 1 1 auto; }
+  #outbody { flex: 1 1 auto; overflow: auto; padding: 4px 8px 8px; background: #10161f; }
+  .ln { display: flex; gap: 8px; padding: 1px 0; border-left: 2px solid transparent; }
+  .ln .ts { color: #3d4a5e; flex: none; }
+  .ln .ms { white-space: pre-wrap; word-break: break-word; }
+  .ln.ok { border-left-color: var(--accent); }
+  .ln.ok .ms { color: var(--accent); }
+  .ln.err { border-left-color: var(--err); background: #1d1418; }
+  .ln.err .ms { color: #ff9c9c; }
+  .ln.info .ms { color: var(--fg); }
+  .ln.dim { border-left-color: #2b3648; }
+  .ln.dim .ms { color: var(--dim); }
+  #outbody::-webkit-scrollbar, .ln::-webkit-scrollbar { width: 9px; height: 9px; }
+  #outbody::-webkit-scrollbar-thumb { background: #26313f; border-radius: 5px; }
+</style>
+</head>
+<body>
+  <div id="bar">
+    <span class="mark"></span>
+    <span class="brand">Spark</span>
+    <span class="doc" id="docname">no document</span>
+    <span class="grow"></span>
+    <span class="hint">Ctrl+Enter run&nbsp;&nbsp;Ctrl+S save&nbsp;&nbsp;Esc close</span>
+    <button id="btn-run" class="primary">Run</button>
+    <button id="btn-save">Save</button>
+    <button id="btn-clear">Clear</button>
+    <button id="btn-close" class="danger">Close</button>
+  </div>
+  <div id="status">
+    <span class="cell"><i class="dot wait" id="dot"></i><span class="k">link</span><span class="v" id="st-conn">booting</span></span>
+    <span class="cell"><span class="k">lsp</span><span class="v" id="st-err">idle</span></span>
+    <span class="cell"><span class="k">buf</span><span class="v" id="st-dirty">clean</span></span>
+    <span class="cell grow"><span class="k">act</span><span class="v" id="st-act">starting monaco</span></span>
+  </div>
+  <div id="wrap">
+    <div id="editor"></div>
+    <div id="grip"></div>
+    <div id="out">
+      <div id="outhead"><span>output</span><span class="grow"></span><span id="outmeta">0 / 300</span></div>
+      <div id="outbody"></div>
+    </div>
+  </div>
+
+  <script src="vs/loader.js"></script>
+  <script>
+window.MonacoEnvironment = { getWorkerUrl: () => URL.createObjectURL(new Blob([""], { type: "text/javascript" })) };
+
+(function () {
+  const connEl = document.getElementById("st-conn");
+  const errEl = document.getElementById("st-err");
+  const dirtyEl = document.getElementById("st-dirty");
+  const actEl = document.getElementById("st-act");
+  const dotEl = document.getElementById("dot");
+  const outBody = document.getElementById("outbody");
+  const outMeta = document.getElementById("outmeta");
+  const docName = document.getElementById("docname");
+
+  const LINK_STATES = { "booting": 1, "hello": 1, "server ready": 1 };
+  const MAX_LINES = 300;
+  const FALLBACK_URI = "file:///spark/main.luau";
+
+  function setStatus(s) {
+    try {
+      const text = String(s == null ? "" : s);
+      if (LINK_STATES[text]) {
+        connEl.textContent = text;
+        dotEl.className = "dot " + (text === "server ready" ? "ok" : text === "hello" ? "mid" : "wait");
+      } else {
+        errEl.textContent = text;
+        errEl.className = "v " + (/error|fail|timeout|bad/.test(text.toLowerCase()) ? "bad" : "");
+      }
+    } catch (e) {}
+  }
+
+  let activityCount = 0;
+  function activity(text) {
+    activityCount++;
+    actEl.textContent = String(text) + " #" + activityCount;
+  }
+
+  function pad2(n) { return n < 10 ? "0" + n : "" + n; }
+  function stamp() {
+    const d = new Date();
+    return pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds());
+  }
+
+  function writeLine(text, cls) {
+    const row = document.createElement("div");
+    row.className = "ln " + (cls || "info");
+    const ts = document.createElement("span");
+    ts.className = "ts";
+    ts.textContent = stamp();
+    const ms = document.createElement("span");
+    ms.className = "ms";
+    ms.textContent = String(text == null ? "" : text);
+    row.appendChild(ts);
+    row.appendChild(ms);
+    outBody.appendChild(row);
+    while (outBody.childElementCount > MAX_LINES) outBody.removeChild(outBody.firstChild);
+    outBody.scrollTop = outBody.scrollHeight;
+    outMeta.textContent = outBody.childElementCount + " / " + MAX_LINES;
+  }
+
+  const post = (o) => { try { window.chrome && window.chrome.webview && window.chrome.webview.postMessage(JSON.stringify(o)); } catch(e) { setStatus("bridge error"); } };
+
+  function hostLog(text) { post({ spark: "log", text: String(text == null ? "" : text) }); }
+
+  let monaco = null;
+  let editor = null;
+  let model = null;
+  let booted = false;
+  let serverReady = false;
+  let docOpened = false;
+  let rootUri = "";
+  let docUri = FALLBACK_URI;
+  let version = 1;
+  let nextId = 1;
+  let savedText = "";
+  let changeTimer = null;
+  let suppress = false;
+  let helloBeforeBoot = null;
+  let textBeforeBoot = null;
+  const pending = new Map();
+
+  function sendMsg(msg) { post({ spark: "lsp", msg: msg }); }
+
+  function notify(method, params) { sendMsg({ jsonrpc: "2.0", method: method, params: params }); }
+
+  function request(method, params, fallback, timeoutMs) {
+    const id = nextId++;
+    return new Promise(function (resolve) {
+      const entry = { resolve: resolve, fallback: fallback };
+      entry.timer = setTimeout(function () {
+        if (!pending.has(id)) return;
+        pending.delete(id);
+        setStatus("timeout " + method);
+        resolve(fallback);
+      }, timeoutMs || 6000);
+      pending.set(id, entry);
+      sendMsg({ jsonrpc: "2.0", id: id, method: method, params: params });
+    });
+  }
+
+  function settle(m) {
+    const id = m.id;
+    const entry = pending.get(id);
+    if (!entry) return;
+    pending.delete(id);
+    clearTimeout(entry.timer);
+    if (m.error) {
+      const why = (m.error && m.error.message) || "lsp error";
+      setStatus("lsp error: " + why);
+      entry.resolve(entry.fallback);
+      return;
+    }
+    entry.resolve(m.result === undefined ? entry.fallback : m.result);
+  }
+
+  function lspDoc() { return { textDocument: { uri: docUri } }; }
+
+  function lspPos(p) { return { line: Math.max(0, (p ? p.lineNumber : 1) - 1), character: Math.max(0, (p ? p.column : 1) - 1) }; }
+
+  function toRange(r) {
+    const s = (r && r.start) || { line: 0, character: 0 };
+    const e = (r && r.end) || s;
+    return {
+      startLineNumber: (s.line || 0) + 1,
+      startColumn: (s.character || 0) + 1,
+      endLineNumber: (e.line || 0) + 1,
+      endColumn: (e.character || 0) + 1
+    };
+  }
+
+  function toTextEdit(edit) {
+    return { range: toRange(edit && edit.range), text: (edit && edit.newText != null) ? String(edit.newText) : "" };
+  }
+
+  function mdPiece(x) {
+    if (x == null) return "";
+    if (typeof x === "string") return x;
+    if (typeof x === "object") {
+      if (x.kind === "markdown") return String(x.value == null ? "" : x.value);
+      if (x.kind === "plaintext") return String(x.value == null ? "" : x.value);
+      if (x.language) return "```" + x.language + "\n" + (x.value == null ? "" : x.value) + "\n```";
+      if (x.value != null) return String(x.value);
+    }
+    return String(x);
+  }
+
+  function toMarkdown(src) {
+    const md = new monaco.languages.MarkdownString("");
+    md.isTrusted = true;
+    md.supportThemeColors = true;
+    md.value = Array.isArray(src) ? src.map(mdPiece).filter(Boolean).join("\n\n") : mdPiece(src);
+    return md;
+  }
+
+  const LSP_KIND = {
+    1: "Text", 2: "Method", 3: "Function", 4: "Field", 5: "Variable", 6: "Class", 7: "Reference",
+    8: "File", 9: "File", 10: "Keyword", 11: "Snippet", 12: "Property", 13: "Value", 14: "Enum",
+    15: "Constant", 16: "Color", 17: "Class", 18: "Snippet", 19: "Operator", 20: "EnumMember",
+    21: "Constant", 22: "Class", 23: "Snippet", 24: "Operator", 25: "TypeParameter"
+  };
+
+  function kindFor(n) {
+    const K = monaco.languages.CompletionItemKind;
+    const name = LSP_KIND[n] || "Text";
+    return K[name] != null ? K[name] : K.Text;
+  }
+
+  function docParams(position, extra) {
+    const p = { textDocument: { uri: docUri }, position: lspPos(position) };
+    if (extra) for (const k in extra) p[k] = extra[k];
+    return p;
+  }
+
+  function registerProviders() {
+    const langs = ["lua", "luau"];
+    try { monaco.languages.register({ id: "luau" }); } catch (e) {}
+
+    langs.forEach(function (lang) {
+      monaco.languages.registerCompletionItemProvider(lang, {
+        triggerCharacters: [".", ":", "(", "["],
+        provideCompletionItems: function (document, position, context) {
+          const triggerKind = context && context.triggerKind === monaco.languages.CompletionTriggerKind.TriggerCharacter ? 2 : 1;
+          const params = docParams(position, {
+            context: {
+              triggerKind: triggerKind,
+              triggerCharacter: context && context.triggerCharacter ? context.triggerCharacter : undefined
+            }
+          });
+          activity("completion");
+          return request("textDocument/completion", params, null).then(function (res) {
+            const raw = Array.isArray(res) ? res : (res && Array.isArray(res.items) ? res.items : []);
+            const word = document.getWordUntilPosition(position);
+            const wordRange = {
+              startLineNumber: position.lineNumber,
+              startColumn: word.startColumn,
+              endLineNumber: position.lineNumber,
+              endColumn: word.endColumn
+            };
+            const suggestions = [];
+            raw.forEach(function (item) {
+              const s = toSuggestion(item, wordRange);
+              if (s) suggestions.push(s);
+            });
+            activity("completion " + suggestions.length + (res && res.isIncomplete ? " partial" : ""));
+            return { suggestions: suggestions };
+          });
+        }
+      });
+
+      monaco.languages.registerHoverProvider(lang, {
+        provideHover: function (document, position) {
+          activity("hover");
+          return request("textDocument/hover", docParams(position), null).then(function (res) {
+            if (!res || res.contents == null) { activity("hover empty"); return null; }
+            const value = Array.isArray(res.contents) ? res.contents.map(mdPiece).filter(Boolean).join("\n\n") : mdPiece(res.contents);
+            if (!value) { activity("hover empty"); return null; }
+            const md = new monaco.languages.MarkdownString("");
+            md.isTrusted = true;
+            md.supportThemeColors = true;
+            md.value = value;
+            activity("hover ok");
+            return { contents: [md], range: res.range ? toRange(res.range) : undefined };
+          });
+        }
+      });
+
+      monaco.languages.registerSignatureHelpProvider(lang, {
+        signatureHelpTriggerCharacters: ["(", ","],
+        signatureHelpRetriggerCharacters: ["(", ","],
+        provideSignatureHelp: function (document, position, token, context) {
+          const isRetrigger = !!(context && context.isRetrigger);
+          const params = docParams(position, {
+            context: { triggerKind: isRetrigger ? 2 : 1, isRetrigger: isRetrigger }
+          });
+          activity("signature help");
+          return request("textDocument/signatureHelp", params, null).then(function (res) {
+            if (!res || !Array.isArray(res.signatures) || res.signatures.length === 0) return null;
+            const signatures = res.signatures.map(function (sig) {
+              return {
+                label: String(sig && sig.label != null ? sig.label : ""),
+                documentation: sig && sig.documentation != null ? toMarkdown(sig.documentation) : undefined,
+                parameters: (sig && Array.isArray(sig.parameters) ? sig.parameters : []).map(function (pi) {
+                  return {
+                    label: String(pi && pi.label != null ? pi.label : ""),
+                    documentation: pi && pi.documentation != null ? toMarkdown(pi.documentation) : undefined
+                  };
+                })
+              };
+            });
+            return {
+              value: {
+                signatures: signatures,
+                activeSignature: typeof res.activeSignature === "number" ? res.activeSignature : 0,
+                activeParameter: typeof res.activeParameter === "number" ? res.activeParameter : 0
+              },
+              dispose: function () {}
+            };
+          });
+        }
+      });
+
+      monaco.languages.registerDefinitionProvider(lang, {
+        provideDefinition: function (document, position) {
+          activity("definition");
+          return request("textDocument/definition", docParams(position), null).then(function (res) {
+            const locs = toLocations(res);
+            activity(locs.length ? "definition " + locs.length : "no definition");
+            return locs;
+          });
+        }
+      });
+    });
+  }
+
+  function toLocations(res) {
+    if (!res) return [];
+    const arr = Array.isArray(res) ? res : [res];
+    const out = [];
+    arr.forEach(function (x) {
+      if (!x || typeof x !== "object") return;
+      const rawUri = x.targetUri || x.uri;
+      const rawRange = x.targetSelectionRange || x.selectionRange || x.targetRange || x.range;
+      if (!rawUri || !rawRange) return;
+      let uri;
+      try { uri = rawUri === docUri ? monaco.Uri.parse(docUri) : monaco.Uri.parse(rawUri); }
+      catch (e) { return; }
+      out.push({ uri: uri, range: toRange(rawRange) });
+    });
+    return out;
+  }
+
+  function toSuggestion(item, wordRange) {
+    if (!item) return null;
+    const label = typeof item.label === "string" ? item.label
+      : (item.label && item.label.label) ? String(item.label.label)
+      : (item.insertText != null ? String(item.insertText) : "");
+    if (!label) return null;
+
+    let insert = item.insertText != null ? String(item.insertText) : label;
+    let range = wordRange;
+    const edit = item.textEdit;
+    if (edit && edit.range && (edit.range.start || edit.range.end)) {
+      range = toRange(edit.range);
+      if (edit.newText != null) insert = String(edit.newText);
+    } else if (edit && edit.insert && edit.insert.range) {
+      range = toRange(edit.insert.range);
+      if (edit.insert.newText != null) insert = String(edit.insert.newText);
+    }
+
+    const out = {
+      label: label,
+      kind: kindFor(item.kind),
+      insertText: insert,
+      range: range,
+      sortText: item.sortText || label
+    };
+    if (item.filterText) out.filterText = String(item.filterText);
+    if (item.detail) out.detail = String(item.detail);
+    if (item.documentation != null) out.documentation = toMarkdown(item.documentation);
+    if (Array.isArray(item.commitCharacters) && item.commitCharacters.length) out.commitCharacters = item.commitCharacters;
+    if (item.insertTextFormat === 2) out.insertTextRules = monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet;
+    if (Array.isArray(item.additionalTextEdits) && item.additionalTextEdits.length) {
+      out.additionalTextEdits = item.additionalTextEdits.map(toTextEdit);
+    }
+    const tags = [];
+    if (Array.isArray(item.tags)) item.tags.forEach(function (t) { tags.push(t); });
+    if (item.deprecated && tags.indexOf(1) < 0) tags.push(1);
+    if (tags.length) out.tags = tags;
+    if (item.preselect) out.preselect = true;
+    return out;
+  }
+
+  function applyDiagnostics(params) {
+    if (!params || !model) return;
+    if (params.uri && docUri && params.uri !== docUri) return;
+    const list = Array.isArray(params.diagnostics) ? params.diagnostics : [];
+    const S = monaco.MarkerSeverity;
+    const sevFor = function (n) {
+      if (n === 1) return S.Error;
+      if (n === 2) return S.Warning;
+      if (n === 3) return S.Info;
+      if (n === 4) return S.Hint;
+      return S.Error;
+    };
+    const markers = [];
+    list.forEach(function (d) {
+      if (!d || !d.range) return;
+      const r = toRange(d.range);
+      const m = {
+        severity: sevFor(d.severity),
+        message: String(d.message == null ? "" : d.message),
+        startLineNumber: r.startLineNumber,
+        startColumn: r.startColumn,
+        endLineNumber: r.endLineNumber,
+        endColumn: r.endColumn
+      };
+      if (d.code != null) m.code = String(d.code);
+      m.source = d.source ? String(d.source) : "luau-lsp";
+      if (Array.isArray(d.tags) && d.tags.length) m.tags = d.tags.slice();
+      if (Array.isArray(d.relatedInformation) && d.relatedInformation.length) {
+        const rel = [];
+        d.relatedInformation.forEach(function (ri) {
+          if (!ri || !ri.location || !ri.location.range) return;
+          let u;
+          try { u = monaco.Uri.parse(ri.location.uri || docUri); } catch (e) { return; }
+          rel.push({ message: String(ri.message || ""), location: { uri: u, range: toRange(ri.location.range) } });
+        });
+        if (rel.length) m.relatedInformation = rel;
+      }
+      markers.push(m);
+    });
+    monaco.editor.setModelMarkers(model, "luau-lsp", markers);
+    const errors = markers.reduce(function (n, m) { return n + (m.severity === S.Error ? 1 : 0); }, 0);
+    activity("diagnostics " + markers.length + (errors ? " (" + errors + " err)" : ""));
+    if (!serverReady) { serverReady = true; setStatus("server ready"); }
+  }
+
+  const STUB_NULL = {
+    "client/registerCapability": 1,
+    "client/unregisterCapability": 1,
+    "window/workDoneProgress/create": 1,
+    "window/showMessage": 1,
+    "telemetry/event": 1
+  };
+
+  function answerServer(m) {
+    const p = m.params || {};
+    const out = { jsonrpc: "2.0", id: m.id };
+    if (m.method === "workspace/configuration") {
+      const items = Array.isArray(p.items) ? p.items : [];
+      out.result = items.map(function () { return {}; });
+    } else if (STUB_NULL[m.method]) {
+      out.result = null;
+    } else if (m.method === "workspace/workspaceFolders") {
+      out.result = [];
+    } else {
+      out.error = { code: -32601, message: "not supported" };
+      setStatus("method unsupported " + m.method);
+    }
+    sendMsg(out);
+  }
+
+  function serverNotification(m) {
+    const p = m.params || {};
+    if (m.method === "textDocument/publishDiagnostics") {
+      applyDiagnostics(p);
+    } else if (m.method === "window/logMessage" || m.method === "window/showMessage") {
+      const text = String(p.message == null ? "" : p.message);
+      if (text) { hostLog("[lsp] " + text); writeLine(text, "dim"); }
+    } else if (m.method === "language/status") {
+      if (p.type === "Started") { setStatus("server ready"); activity("server " + (p.message || "started")); }
+      else if (p.type === "Error") { setStatus("server error " + (p.message || "")); }
+    }
+  }
+
+  function onLspSingle(m) {
+    if (!m || typeof m !== "object") return;
+    const hasId = m.id !== undefined && m.id !== null;
+    if (hasId && m.method) { answerServer(m); return; }
+    if (hasId && (m.result !== undefined || m.error !== undefined)) { settle(m); return; }
+    if (m.method) serverNotification(m);
+  }
+
+  function onLspRaw(payload) {
+    let parsed;
+    try { parsed = typeof payload === "string" ? JSON.parse(payload) : payload; }
+    catch (e) {
+      setStatus("bad lsp payload");
+      hostLog("lsp payload parse failed: " + (e && e.message ? e.message : e));
+      return;
+    }
+    if (Array.isArray(parsed)) { parsed.forEach(onLspSingle); return; }
+    onLspSingle(parsed);
+  }
+
+  function initializeParams() {
+    return {
+      processId: null,
+      clientInfo: { name: "spark-editor", version: "1" },
+      rootUri: rootUri,
+      workspaceFolders: [{ uri: rootUri, name: "spark" }],
+      capabilities: {
+        textDocument: {
+          completion: {
+            completionItem: {
+              snippetSupport: true,
+              documentationFormat: ["markdown", "plaintext"],
+              resolveSupport: { properties: ["documentation", "detail", "additionalTextEdits"] }
+            },
+            context: true
+          },
+          hover: { contentFormat: ["markdown", "plaintext"] },
+          signatureHelp: { signatureInformation: { documentationFormat: ["markdown", "plaintext"] } },
+          definition: { linkSupport: false },
+          publishDiagnostics: { relatedInformation: true, tagSupport: { valueSet: [1, 2] } },
+          didChangeWatchedFiles: { dynamicRegistration: false },
+          synchronization: { didSave: true }
+        },
+        workspace: {
+          applyEdit: false,
+          workspaceEdit: { documentChanges: false },
+          configuration: true,
+          didChangeConfiguration: { dynamicRegistration: false }
+        }
+      },
+      trace: "off",
+      workspaceRoot: null
+    };
+  }
+
+  function initializedParams() {
+    return {
+      settings: {
+        luau: {
+          lsp: { server: { verboseMode: false } },
+          types: { definitions: { roblox: { compilerComments: "readFromFile", useDatamodelFolders: false } } },
+          completions: { importAdd: "invokes", allowStringRequireAutocomplete: true },
+          diagnostics: { workspace: { enable: true, lint: true } },
+          platform: { typeRequireMode: "enabled", instanceTypeMemberVisibility: "none" }
+        }
+      }
+    };
+  }
+
+  function currentText() { return model ? model.getValue() : ""; }
+
+  function setBuffer(text) {
+    if (!model) return;
+    suppress = true;
+    model.setValue(String(text == null ? "" : text));
+    suppress = false;
+    savedText = currentText();
+    refreshDirty();
+  }
+
+  function swapModel(uri, text) {
+    const value = String(text == null ? "" : text);
+    let uriObj;
+    try { uriObj = monaco.Uri.parse(uri); } catch (e) { uriObj = monaco.Uri.parse(FALLBACK_URI); }
+    let existing = null;
+    try { existing = monaco.editor.getModel(uriObj); } catch (e) { existing = null; }
+    const previous = editor.getModel();
+    suppress = true;
+    if (existing) {
+      existing.setValue(value);
+      if (previous !== existing) editor.setModel(existing);
+      model = existing;
+    } else {
+      const created = monaco.editor.createModel(value, "lua", uriObj);
+      editor.setModel(created);
+      model = created;
+    }
+    suppress = false;
+    if (previous && previous !== model) { try { previous.dispose(); } catch (e) {} }
+    savedText = currentText();
+    refreshDirty();
+  }
+
+  function refreshDirty() {
+    const dirty = !!model && currentText() !== savedText;
+    dirtyEl.textContent = dirty ? "modified" : "clean";
+    dirtyEl.className = "v " + (dirty ? "warn" : "ok");
+    return dirty;
+  }
+
+  function isDirty() { return !!model && currentText() !== savedText; }
+
+  function sendDidChange() {
+    changeTimer = null;
+    if (!docOpened || !model) return;
+    version++;
+    notify("textDocument/didChange", {
+      textDocument: { uri: docUri, version: version },
+      contentChanges: [{ text: currentText() }]
+    });
+    activity("didChange v" + version);
+  }
+
+  function scheduleChange() {
+    refreshDirty();
+    if (!docOpened) return;
+    if (changeTimer) clearTimeout(changeTimer);
+    changeTimer = setTimeout(sendDidChange, 200);
+  }
+
+  function flushChange() {
+    if (changeTimer) { clearTimeout(changeTimer); changeTimer = null; }
+    sendDidChange();
+  }
+
+  function onHello(o) {
+    rootUri = o.rootUri || rootUri;
+    docUri = o.docUri || docUri || FALLBACK_URI;
+    if (!booted) { helloBeforeBoot = o; setStatus("hello queued"); return; }
+    startDocument(o.text);
+  }
+
+  function startDocument(text) {
+    setStatus("hello");
+    docName.textContent = docUri.replace(/^file:\/\//, "").replace(/\//g, "\\");
+    const initial = text != null ? String(text) : (textBeforeBoot != null ? String(textBeforeBoot) : currentText());
+    textBeforeBoot = null;
+    swapModel(docUri, initial);
+    version = 1;
+    activity("initialize");
+    request("initialize", initializeParams(), null, 20000).then(function (res) {
+      if (res && res.error) setStatus("initialize failed");
+      setStatus("server ready");
+      serverReady = true;
+      notify("initialized", initializedParams());
+      notify("textDocument/didOpen", {
+        textDocument: { uri: docUri, languageId: "luau", version: version, text: currentText() }
+      });
+      docOpened = true;
+      savedText = currentText();
+      refreshDirty();
+      activity("didOpen");
+      writeLine("language server attached " + (res && res.serverInfo && res.serverInfo.name ? res.serverInfo.name : "luau-lsp"), "ok");
+      try { editor.focus(); } catch (e) {}
+    });
+  }
+
+  function runNow() {
+    if (!model) return;
+    const text = currentText();
+    post({ spark: "run", text: text });
+    writeLine("run submitted " + text.length + " B", "dim");
+    activity("run");
+  }
+
+  function saveNow() {
+    if (!model) return;
+    flushChange();
+    const text = currentText();
+    post({ spark: "save", text: text });
+    savedText = text;
+    refreshDirty();
+    writeLine("save submitted " + text.length + " B", "dim");
+    activity("save");
+  }
+
+  function requestClose(why) {
+    const dirty = isDirty();
+    hostLog("close requested by " + why + (dirty ? " with unsaved changes" : ""));
+    writeLine("close requested (" + why + (dirty ? ", modified" : "") + ")", "dim");
+    post({ spark: "close" });
+    activity("close");
+  }
+
+  function onSetText(o) {
+    const text = o.text == null ? "" : String(o.text);
+    if (!booted) { textBeforeBoot = text; return; }
+    setBuffer(text);
+    if (docOpened) { flushChange(); }
+    writeLine("buffer replaced " + text.length + " B", "dim");
+    activity("settext");
+  }
+
+  function onHostMessage(e) {
+    let o = null;
+    try {
+      o = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
+    } catch (err) {
+      hostLog("host message unparsable: " + (err && err.message ? err.message : err));
+      setStatus("bridge payload error");
+      return;
+    }
+    if (!o || typeof o !== "object") return;
+    try {
+      if (o.spark === "hello") onHello(o);
+      else if (o.spark === "lsp") onLspRaw(o.payload);
+      else if (o.spark === "settext") onSetText(o);
+      else if (o.spark === "result") writeLine(o.text == null ? "" : o.text, o.ok ? "ok" : "err");
+      else if (o.spark === "close") requestClose("host");
+    } catch (err) {
+      hostLog("host message handler failed: " + (err && err.message ? err.message : err));
+      setStatus("bridge handler error");
+    }
+  }
+
+  function bindBridge() {
+    if (window.chrome && window.chrome.webview && window.chrome.webview.addEventListener) {
+      window.chrome.webview.addEventListener("message", onHostMessage);
+      return;
+    }
+    window.addEventListener("message", onHostMessage);
+  }
+
+  function wireKeys() {
+    document.addEventListener("keydown", function (e) {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const k = e.key ? String(e.key).toLowerCase() : "";
+      if (k === "enter") { e.preventDefault(); e.stopPropagation(); runNow(); }
+      else if (k === "s") { e.preventDefault(); e.stopPropagation(); saveNow(); }
+    }, true);
+
+    try {
+      const KC = monaco.KeyCode || {};
+      const esc = KC.Escape != null ? KC.Escape : KC.Esc;
+      if (esc != null) {
+        editor.addCommand(esc, function () { requestClose("escape"); },
+          "!suggestWidgetVisible && !hoverVisible && !parameterHintsVisible && !findWidgetVisible && !renameInputVisible");
+      }
+    } catch (e) {
+      hostLog("escape keybinding unavailable: " + (e && e.message ? e.message : e));
+    }
+  }
+
+  function wireGrip() {
+    const grip = document.getElementById("grip");
+    const out = document.getElementById("out");
+    let dragging = false;
+    grip.addEventListener("mousedown", function (e) {
+      dragging = true;
+      document.body.classList.add("resizing");
+      e.preventDefault();
+    });
+    window.addEventListener("mousemove", function (e) {
+      if (!dragging) return;
+      const h = window.innerHeight - e.clientY - 5;
+      const min = 60;
+      const max = Math.max(min, window.innerHeight - 180);
+      out.style.height = Math.max(min, Math.min(max, h)) + "px";
+      if (editor) editor.layout();
+    });
+    window.addEventListener("mouseup", function () {
+      if (!dragging) return;
+      dragging = false;
+      document.body.classList.remove("resizing");
+      if (editor) editor.layout();
+    });
+    window.addEventListener("resize", function () { if (editor) editor.layout(); });
+  }
+
+  function bootMonaco() {
+    monaco = window.monaco;
+    if (!monaco || !monaco.editor) {
+      setStatus("monaco missing");
+      hostLog("monaco failed to expose the editor api");
+      return;
+    }
+
+    monaco.editor.defineTheme("spark-dark", {
+      base: "vs-dark",
+      inherit: true,
+      rules: [
+        { token: "comment", foreground: "556277", fontStyle: "italic" },
+        { token: "keyword", foreground: "7fd1b0" },
+        { token: "string", foreground: "9ecbff" },
+        { token: "number", foreground: "e5b567" },
+        { token: "constant", foreground: "e5b567" },
+        { token: "identifier", foreground: "cfd8e3" },
+        { token: "delimiter", foreground: "7f8ea3" },
+        { token: "type", foreground: "d2a8ff" },
+        { token: "string.key", foreground: "d2a8ff" }
+      ],
+      colors: {
+        "editor.background": "#0e1116",
+        "editor.foreground": "#cfd8e3",
+        "editorLineNumber.foreground": "#3b4657",
+        "editorLineNumber.activeForeground": "#8b9bb2",
+        "editorCursor.foreground": "#7fd1b0",
+        "editor.selectionBackground": "#22344a",
+        "editor.inactiveSelectionBackground": "#1a2735",
+        "editor.lineHighlightBackground": "#141b25",
+        "editorIndentGuide.background1": "#1e2734",
+        "editorIndentGuide.activeBackground1": "#33425a",
+        "editorWidget.background": "#1a2230",
+        "editorWidget.border": "#26313f",
+        "editorSuggestWidget.background": "#1a2230",
+        "editorSuggestWidget.border": "#26313f",
+        "editorSuggestWidget.selectedBackground": "#22344a",
+        "editorSuggestWidget.highlightForeground": "#7fd1b0",
+        "editorHoverWidget.background": "#1a2230",
+        "editorHoverWidget.border": "#26313f",
+        "editorMarkerNavigation.background": "#151c27",
+        "panel.background": "#10161f",
+        "scrollbarSlider.background": "#20293888",
+        "scrollbarSlider.hoverBackground": "#2b3648aa",
+        "list.hoverBackground": "#1f2937"
+      }
+    });
+    monaco.editor.setTheme("spark-dark");
+
+    try {
+      monaco.languages.setLanguageConfiguration("lua", {
+        comments: { lineComment: "--", blockComment: ["--[[", "]]"] },
+        brackets: [["{", "}"], ["[", "]"], ["(", ")"]],
+        autoClosingPairs: [
+          { open: "{", close: "}" }, { open: "[", close: "]" }, { open: "(", close: ")" },
+          { open: '"', close: '"' }, { open: "'", close: "'" }
+        ],
+        surroundingPairs: [
+          { open: "{", close: "}" }, { open: "[", close: "]" }, { open: "(", close: ")" },
+          { open: '"', close: '"' }, { open: "'", close: "'" }
+        ]
+      });
+    } catch (e) {}
+
+    model = monaco.editor.createModel(textBeforeBoot != null ? String(textBeforeBoot) : "", "lua", monaco.Uri.parse(docUri));
+    savedText = model.getValue();
+    textBeforeBoot = null;
+
+    editor = monaco.editor.create(document.getElementById("editor"), {
+      model: model,
+      theme: "spark-dark",
+      automaticLayout: true,
+      fontSize: 13,
+      fontFamily: '"Cascadia Mono", "JetBrains Mono", "Consolas", "SF Mono", "Courier New", monospace',
+      lineHeight: 19,
+      tabSize: 4,
+      insertSpaces: true,
+      minimap: { enabled: false },
+      smoothScrolling: true,
+      cursorBlinking: "phase",
+      cursorSmoothCaretAnimation: "on",
+      renderLineHighlight: "all",
+      scrollBeyondLastLine: false,
+      padding: { top: 10, bottom: 10 },
+      guides: { indentation: true, bracketPairs: true },
+      bracketPairColorization: { enabled: true },
+      quickSuggestions: { other: true, comments: false, strings: true },
+      suggestSelection: "first",
+      suggestFontSize: 12,
+      wordBasedSuggestions: "off",
+      scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10, useShadows: false },
+      overviewRulerLanes: 0,
+      fixedOverflowWidgets: true
+    });
+
+    registerProviders();
+    wireKeys();
+    wireGrip();
+
+    editor.onDidChangeModelContent(function () {
+      if (suppress) return;
+      scheduleChange();
+    });
+
+    document.getElementById("btn-run").addEventListener("click", runNow);
+    document.getElementById("btn-save").addEventListener("click", saveNow);
+    document.getElementById("btn-close").addEventListener("click", function () { requestClose("button"); });
+    document.getElementById("btn-clear").addEventListener("click", function () {
+      while (outBody.firstChild) outBody.removeChild(outBody.firstChild);
+      outMeta.textContent = "0 / " + MAX_LINES;
+    });
+
+    refreshDirty();
+    booted = true;
+    setStatus("booting");
+    activity("monaco booted");
+    writeLine("editor ready", "ok");
+    post({ spark: "ready" });
+
+    if (helloBeforeBoot) {
+      const o = helloBeforeBoot;
+      helloBeforeBoot = null;
+      onHello(o);
+    }
+  }
+
+  function bootFailure(err) {
+    let why = "unknown";
+    try { why = err && (err.message || err.toString()) ? String(err.message || err.toString()) : JSON.stringify(err); }
+    catch (e) { why = "unreadable error"; }
+    setStatus("monaco load error");
+    writeLine("Monaco failed to load: " + why, "err");
+    hostLog("monaco load failed: " + why);
+  }
+
+  window.__sparkSelfTest = function () {
+    try {
+      if (!booted || !docOpened) { hostLog("selftest not ready booted=" + booted + " open=" + docOpened); return; }
+      const src = 'local p = game:GetService("Players")\nlocal part = workspace.\n';
+      model.setValue(src);
+      version = version + 1;
+      notify("textDocument/didChange", { textDocument: { uri: docUri, version: version }, contentChanges: [{ text: src }] });
+      request("textDocument/completion", {
+        textDocument: { uri: docUri },
+        position: { line: 1, character: 23 },
+        context: { triggerKind: 1 }
+      }, { items: [] }, 8000).then(function (res) {
+        const items = (res && res.items) ? res.items : (Array.isArray(res) ? res : []);
+        const labels = items.slice(0, 6).map(function (i) { return i.label; }).join(",");
+        hostLog("selftest completions=" + items.length + " first=" + labels);
+        request("textDocument/hover", { textDocument: { uri: docUri }, position: { line: 0, character: 12 } }, null, 8000).then(function (h) {
+          let txt = "none";
+          if (h && h.contents) txt = (typeof h.contents === "string" ? h.contents : (h.contents.value || "?"));
+          hostLog("selftest hover=" + String(txt).replace(/\s+/g, " ").slice(0, 90));
+        });
+        post({ spark: "run", text: 'print("spark selftest run")' });
+      });
+    } catch (e) { hostLog("selftest error " + (e && e.message ? e.message : String(e))); }
+  };
+
+  setStatus("booting");
+  bindBridge();
+  writeLine("spark editor booting", "dim");
+
+  require.config({ paths: { vs: "vs" } });
+  require(["vs/editor/editor.main"], bootMonaco, bootFailure);
+})();
+  </script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "luau": {
+    "lsp": {
+      "server": { "verboseMode": false, "statusMessage": false },
+      "diagnostics": {
+        "workspace": { "enable": true, "lint": true, "unusedLocal": true, "unusedRequire": true },
+        "includeLibraryDefinitions": false
+      },
+      "completions": { "importAdd": "invokes", "parameterHints": true, "documentation": true },
+      "types": { "definitions": { "roblox": { "compilerComments": "readFromFile", "useDatamodelFolders": false } } },
+      "platform": { "typeRequireMode": "enabled", "instanceTypeMemberVisibility": "none" },
+      "hover": { "tableDocumentedMembers": "metadata" },
+      "indexedFilesJobCount": 2
+    }
+  }
+}
